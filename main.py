@@ -10,24 +10,23 @@ import crispor_engine
 
 # --- CẤU HÌNH ---
 # Dùng file gốc không nén (vì bạn không cài được pysam/bgzip)
-FASTA_PATH = "data/R570.fasta"
+FASTA_PATH = "data/R570/R570.fasta"
 genome_reader = None
-
+genome_manager = genome.GenomeManager()
 
 # --- LIFESPAN (THAY THẾ ON_EVENT) ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. Code chạy khi Server KHỞI ĐỘNG (Startup)
-    global genome_reader
-    try:
-        print(f"🔄 Đang tải dữ liệu Genome từ: {FASTA_PATH}...")
-        genome_reader = genome.GenomeReader(FASTA_PATH)
-        print("✅ Genome data loaded successfully!")
-    except Exception as e:
-        print(f"❌ Lỗi tải Genome: {e}")
-        # Không kill app, nhưng sẽ báo lỗi nếu gọi API sequence
+    # 1. Kết nối DB để lấy danh sách Genome
+    db = database.SessionLocal()
+    genomes = db.query(models.Genome).all()
 
-    yield  # Điểm phân cách giữa Bật và Tắt
+    # 2. Load từng file FASTA vào Manager
+    for g in genomes:
+        genome_manager.load_genome(g.id, g.fasta_path)
+
+    db.close()
+    yield
 
     # 2. Code chạy khi Server TẮT (Shutdown)
     print("🛑 Server đang tắt. Dọn dẹp tài nguyên...")
@@ -84,6 +83,49 @@ def search_genes(
     return {"count": len(results), "data": results}
 
 
+@app.get("/genome/search")
+def search_genes(
+        genome: str = Query(..., description="Chọn bộ gen: R570, AP85..."),  # Bắt buộc
+        q: str = Query(None, description="Từ khóa: ID hoặc mô tả"),
+        chrom: str = Query(None, description="Tên nhiễm sắc thể (VD: Sh_205k03)"),
+        start: int = None,
+        end: int = None,
+        limit: int = 10,
+        db: Session = Depends(database.get_db)
+):
+    # 1. Lọc theo Genome trước tiên (Quan trọng nhất)
+    # Chỉ tìm các gen thuộc về bộ gen được chọn
+    query = db.query(models.Gene).filter(models.Gene.genome_id == genome)
+
+    # 2. Lọc theo Nhiễm sắc thể (nếu có)
+    if chrom:
+        query = query.filter(models.Gene.chromosome == chrom)
+
+    # 3. Lọc theo Vùng (nếu có đủ 3 tham số tọa độ)
+    # Logic: Tìm gen nằm GIAO với vùng truy vấn
+    if chrom and start and end:
+        query = query.filter(
+            models.Gene.start <= end,
+            models.Gene.end >= start
+        )
+
+    # 4. Lọc theo Từ khóa (nếu có)
+    if q:
+        search_fmt = f"%{q}%"
+        query = query.filter(or_(
+            models.Gene.gene_id.like(search_fmt),
+            models.Gene.description.like(search_fmt)
+        ))
+
+    # 5. Thực thi và trả về kết quả
+    results = query.limit(limit).all()
+
+    return {
+        "genome_selected": genome,
+        "count": len(results),
+        "data": results
+    }
+
 @app.get("/genes/sequence")
 def get_gene_sequence(
         gene_id: str = Query(..., description="Nhập ID của gen vào đây (VD: Sh_205k03_g000010)"),
@@ -116,6 +158,24 @@ def get_gene_sequence(
     }
 
 
+@app.get("/genome/sequence")
+def get_sequence(
+        genome: str,
+        gene_id: str,
+        db: Session = Depends(database.get_db)
+):
+    # Tìm gen trong genome cụ thể
+    gene = db.query(models.Gene).filter(
+        models.Gene.genome_id == genome,
+        models.Gene.gene_id == gene_id
+    ).first()
+
+    if not gene: raise HTTPException(404, "Not found")
+
+    # Gọi Manager lấy sequence đúng file
+    seq = genome_manager.get_sequence(genome, gene.chromosome, gene.start, gene.end)
+    return {"genome": genome, "gene": gene_id, "sequence": seq}
+
 @app.post("/tools/crispr/design")
 def design_crispr_guides(
         sequence: str = None,
@@ -123,6 +183,8 @@ def design_crispr_guides(
         db: Session = Depends(database.get_db)
 ):
     """
+
+    PAM : NGG (N = ATGC)
     Công cụ thiết kế gRNA.
     Người dùng có thể nhập trực tiếp Sequence HOẶC nhập Gene ID để hệ thống tự lấy sequence.
     """
