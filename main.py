@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager  # <--- Thư viện quản lý ngữ 
 import models
 import database
 import genome
+import crispr
+import crispor_engine
 
 # --- CẤU HÌNH ---
 # Dùng file gốc không nén (vì bạn không cài được pysam/bgzip)
@@ -111,4 +113,80 @@ def get_gene_sequence(
         "location": f"{gene.chromosome}:{gene.start}-{gene.end}",
         "length": len(seq),
         "sequence": seq
+    }
+
+
+@app.post("/tools/crispr/design")
+def design_crispr_guides(
+        sequence: str = None,
+        gene_id: str = None,
+        db: Session = Depends(database.get_db)
+):
+    """
+    Công cụ thiết kế gRNA.
+    Người dùng có thể nhập trực tiếp Sequence HOẶC nhập Gene ID để hệ thống tự lấy sequence.
+    """
+    target_seq = ""
+
+    # Case 1: Nhập Gene ID
+    if gene_id:
+        gene = db.query(models.Gene).filter(models.Gene.gene_id == gene_id).first()
+        if not gene:
+            raise HTTPException(404, "Gene ID not found")
+        if not genome_reader:
+            raise HTTPException(500, "Genome system not ready")
+        target_seq = genome_reader.get_sequence(gene.chromosome, gene.start, gene.end)
+
+    # Case 2: Nhập Sequence trực tiếp
+    elif sequence:
+        target_seq = sequence
+    else:
+        raise HTTPException(400, "Phải cung cấp sequence hoặc gene_id")
+
+    # Gọi thuật toán tìm target
+    results = crispr.find_crispr_targets(str(target_seq))
+
+    return {
+        "gene_id": gene_id,
+        "input_length": len(target_seq),
+        "candidates_found": len(results),
+        "guides": results
+    }
+
+
+@app.post("/tools/crispor")
+def run_crispor_tool(
+        gene_id: str = None,
+        sequence: str = None,
+        db: Session = Depends(database.get_db)
+):
+    """
+    Chạy thuật toán mô phỏng CRISPOR.
+    Input: Gene ID hoặc Sequence thô.
+    """
+    target_seq = ""
+
+    print(f"DEBUG: Nhận được gene_id = '{gene_id}'")
+
+    # 1. Lấy sequence
+    if gene_id:
+        gene = db.query(models.Gene).filter(models.Gene.gene_id == gene_id).first()
+        if not gene: raise HTTPException(404, "Gene not found")
+
+        # Cần lấy rộng ra +/- 100bp để thiết kế Primer
+        padding = 100
+        target_seq = genome_reader.get_sequence(gene.chromosome, gene.start - padding, gene.end + padding)
+    elif sequence:
+        target_seq = sequence
+    else:
+        raise HTTPException(400, "Missing input")
+
+    # 2. Chạy thuật toán
+    results = crispor_engine.run_crispor_analysis(str(target_seq))
+
+    return {
+        "gene_id": gene_id,
+        "input_length": len(target_seq),
+        "guides_found": len(results),
+        "top_guides": results  # Trả về top 10 tốt nhất
     }
