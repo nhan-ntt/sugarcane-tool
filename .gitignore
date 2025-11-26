@@ -1,0 +1,11 @@
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+venv/
+.venv/
+data/
+*.db
+*.fasta
+*.fai
+*.gz
