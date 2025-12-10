@@ -10,6 +10,8 @@ class Genome(Base):
     id = Column(String, primary_key=True, index=True)
     name = Column(String)  # VD: Saccharum hybrid R570
     fasta_path = Column(String)  # Đường dẫn file: data/R570.fasta
+    cds_path = Column(String)  # File CDS (.cds.fna) - MỚI
+    protein_path = Column(String)  # File Protein (.faa) - MỚI
 
     # Quan hệ 1-N với Gene
     genes = relationship("Gene", back_populates="genome_ref")

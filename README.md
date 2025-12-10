@@ -1,0 +1,1 @@
+python import_data.py  --genome R570  --gff data/R570/R570.gff3  --fasta data/R570/R570.fasta  --cds data/R570/R570.cds.fna  --protein data/R570/R570.protein.faa

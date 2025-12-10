@@ -28,6 +28,47 @@ DOENCH_PARAMS = [
 ]
 
 
+CFD_SCORES = {
+    'rA:dA': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.0],
+    'rA:dC': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.0],
+    'rA:dG': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.0],
+    'rC:dA': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.1, 0.0, 0.0],
+    'rC:dC': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.1, 0.0, 0.0],
+    'rC:dT': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.1, 0.0, 0.0],
+    'rG:dA': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.0, 0.0],
+    'rG:dG': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.0, 0.0],
+    'rG:dT': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.0, 0.0],
+    'rT:dC': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.0],
+    'rT:dG': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.0],
+    'rT:dT': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.0],
+}
+
+
+def get_cfd_weight(rna_base, dna_base, position_1_based):
+    # Tạo key ví dụ: rA:dG
+    key = f"r{rna_base}:d{dna_base}"
+    if key in CFD_SCORES:
+        # position trong mảng là 0-based, input là 1-based
+        idx = position_1_based - 1
+        if 0 <= idx < 20:
+            return CFD_SCORES[key][idx]
+
+    # Nếu không tìm thấy (hoặc là N), trả về mặc định 1.0 (Nguy hiểm nhất)
+    return 1.0
+
+# Ma trận CFD (Simplified): Vị trí tính từ 1 (xa PAM) đến 20 (sát PAM)
+# Chuẩn Doench: Mismatch ở vị trí 20 (sát PAM) thì phạt NHẸ (score cao).
+# Mismatch ở vị trí 1-10 (xa PAM) thì phạt NẶNG (score thấp).
+# Ở đây ta lưu "Tỷ lệ cắt" (Cutting Frequency).
+# 1.0 = Cắt như thật (Nguy hiểm). 0.0 = Không cắt (An toàn).
+CFD_WEIGHTS = {
+    # Vị trí: [Điểm phạt]
+    1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, # Xa PAM -> Cắt mạnh -> Nguy hiểm
+    6: 1.0, 7: 1.0, 8: 0.8, 9: 0.7, 10: 0.6,
+    11: 0.5, 12: 0.4, 13: 0.3, 14: 0.2, 15: 0.1,
+    16: 0.05, 17: 0.02, 18: 0.01, 19: 0.0, 20: 0.0 # Sát PAM -> Không cắt -> An toàn
+}
+
 class CrisporEngine:
     def __init__(self, genome_index_path):
         self.genome_index = genome_index_path
@@ -64,7 +105,7 @@ class CrisporEngine:
     def calculate_efficiency_score(self, context_30bp):
         """
         Bước 2: Tính điểm Doench 2014 (Logistic Regression) - CHÍNH CHỦ
-        Dựa trên file doenchScore.py bạn cung cấp.
+        Dựa trên file doenchScore.py
         """
         if len(context_30bp) != 30:
             return 0  # Nếu không đủ 30bp thì không tính được
@@ -196,13 +237,65 @@ class CrisporEngine:
         return off_targets
 
     def calculate_specificity_score(self, guide_seq, off_targets):
-        """Bước 4: Tính CFD (Giữ nguyên)"""
-        sum_cfd = 0
+        """
+        Tính điểm CFD chuẩn theo Doench 2016.
+        Score = 100 / (1 + Tổng xác suất cắt của các off-target)
+        """
+        aggregate_cfd_score = 0.0
+
         for ot in off_targets:
-            if ot['mismatches'] == 0: continue
-            # Giả lập điểm phạt
-            sum_cfd += 0.5
-        return round(100 / (1 + sum_cfd), 2)
+            if ot['mismatches'] == 0: continue  # Bỏ qua chính nó (On-target)
+
+            # 1. Lấy chi tiết các lỗi sai: Vị trí nào? RNA là gì? DNA là gì?
+            md_str = ot.get('md', '')
+            errors = self._get_mismatch_details(md_str, guide_seq)
+
+            # 2. Tính xác suất cắt (Cutting Probability) của Off-target này
+            # Theo Doench 2016: Nếu có nhiều lỗi, nhân các xác suất lại với nhau
+            # [cite: 955, 956]
+            current_ot_prob = 1.0
+
+            for pos, rna, dna in errors:
+                # Gọi hàm get_cfd_weight ta đã viết ở bài trước
+                # Hàm này sẽ tra bảng CFD_SCORES['rA:dG'][pos]
+                weight = get_cfd_weight(rna, dna, pos)
+                current_ot_prob *= weight
+
+            # Cộng dồn vào tổng nguy cơ
+            aggregate_cfd_score += current_ot_prob
+
+        # 3. Công thức chuẩn hóa về thang 100 [cite: 593]
+        # aggregate_cfd_score càng cao -> Score càng thấp (Càng nguy hiểm)
+        specificity = 100 / (1 + aggregate_cfd_score)
+
+        return round(specificity, 2)
+
+    def _get_mismatch_positions(self, md_str):
+        """
+        Dịch chuỗi MD của Bowtie2 (VD: '10A5C3') ra danh sách vị trí lỗi.
+        MD:Z:10A5C3 nghĩa là: 10 đúng -> 1 sai (A) -> 5 đúng -> 1 sai (C) -> 3 đúng.
+        Vị trí lỗi (0-based) sẽ là: 10, 16.
+        """
+        if not md_str: return []
+
+        positions = []
+        current_pos = 0
+
+        # Dùng Regex để tách số và chữ
+        # (\d+) là số lượng match, ([A-Z]|\^[A-Z]+) là mismatch hoặc deletion
+        import re
+        tokens = re.findall(r'(\d+)|([A-Z]|\^[A-Z]+)', md_str)
+
+        for match_len, mismatch_char in tokens:
+            if match_len:
+                current_pos += int(match_len)
+            elif mismatch_char:
+                # Đây là một vị trí lỗi
+                positions.append(current_pos + 1)  # Lưu 1-based index (1-20)
+                current_pos += 1  # Nhảy qua ký tự lỗi
+
+        return positions
+
 
     def design_primers(self, sequence_template, target_start):
         """Bước 5: Primer3 (Giữ nguyên)"""
@@ -228,9 +321,15 @@ class CrisporEngine:
         except:
             return {"left": "N/A", "right": "N/A", "error": "Primer Error"}
 
+    def calculate_gc_content(self, sequence):
+        """Tính phần trăm G và C trong chuỗi"""
+        if not sequence: return 0.0
+        g_count = sequence.count('G')
+        c_count = sequence.count('C')
+        return round((g_count + c_count) / len(sequence) * 100, 2)
 
-# --- Main Wrapper ---
-def run_crispor_analysis(full_sequence, genome_index_path):  # <--- Thêm tham số này
+
+def run_crispor_analysis(full_sequence, genome_index_path):
 
     # Khởi tạo Engine với đường dẫn động được truyền vào
     engine = CrisporEngine(genome_index_path=genome_index_path)
@@ -247,14 +346,18 @@ def run_crispor_analysis(full_sequence, genome_index_path):  # <--- Thêm tham s
         spec = engine.calculate_specificity_score(cand['guide_seq'], ot)
         prim = engine.design_primers(full_sequence, cand['start'])
 
+        gc_val = engine.calculate_gc_content(cand['guide_seq'])
+
         results.append({
             "sequence": cand['guide_seq'],
             "pam": cand['pam'],
             "location": f"{cand['start']}-{cand['end']}",
+            "gc_content": gc_val,
             "scores": {
                 "efficiency_doench": eff,
                 "specificity_cfd": spec
             },
+            "off_targets_count": len(ot),
             "primers": prim
         })
 
